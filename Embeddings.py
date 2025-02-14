@@ -1,38 +1,41 @@
-import ollama
 import pdfplumber
-import numpy as np
-from datetime import datetime
-from groq import Groq
 from groq import AsyncGroq
-import os
-import re
 import json
 import io
 from minio import Minio
-import psycopg2
 import asyncpg
-import asyncio
-from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer
+from decouple import config
+import constants
 
-download_path = "./"
 pool = None 
-client_minio = Minio(endpoint= "localhost:9000",
-    access_key= "minio",
-    secret_key= "miniopass",
-    secure=False)
+client_minio = Minio(
+    endpoint= config("MINIO_ENDPOINT"),
+    access_key= config("MINIO_ACCESS_KEY"),
+    secret_key= config("MINIO_SECRET_KEY"),
+    secure=False
+)
+
 client = AsyncGroq(
 
-    api_key= "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",
+    api_key= config("GROQ_API_KEY"),
 
 )
 
-model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
+model = SentenceTransformer(config("SENTENCE_TRANSFORMER_MODEL"))
 
 async def run():
     # Establish a connection to the database
     global pool
-    pool = await asyncpg.create_pool(host = "localhost", database="app", user="app_user", password="public1",port="5432",min_size=15,max_size=20)
+    pool = await asyncpg.create_pool(
+        host = config("DB_HOST"), 
+        database=config("DB_NAME"), 
+        user=config("DB_USER"), 
+        password=config("DB_PASSWORD"),
+        port=config("DB_PORT"),
+        min_size=config("DB_POOL_MIN_SIZE"),
+        max_size=config("DB_POOL_MAX_SIZE")
+    )
 
 def weighted_embed_vec(skill_dict, embedding):
     total_weight = sum(skill_dict.values())
@@ -49,11 +52,11 @@ async def main_function(id,user_id,type):
     if pool == None:
         await run()
     async with pool.acquire() as conn:
-        if type == 'cv':
+        if type == constants.CV_TYPE:
 
             rows = await conn.fetch("SELECT skills FROM CV_Keywords WHERE cv_id = $1", id)
             skills = rows[0][0]
-            response = client_minio.get_object("cvs-bucket", f"{id}.pdf")
+            response = client_minio.get_object(config("MINIO_CV_BUCKET"), f"{id}.pdf")
             pdf_bytes = io.BytesIO(response.read())
 
             with pdfplumber.open(pdf_bytes) as pdf:
@@ -61,51 +64,7 @@ async def main_function(id,user_id,type):
                     text = page.extract_text()
                     print(text)
             
-            weight_cv = '''You are an expert in analyzing candidate CVs to assess skill proficiency. Given a CV and a list of extracted skills, evaluate the candidate’s experience in each skill and assign a rating from 1 (poor) to 5 (excellent) based on:
-            - Years of experience
-            - Projects or work history related to the skill
-            - Certifications, courses, or achievements
-
-            Return the result in the following **JSON format**:
-
-            {
-            "skills": {
-                "Skill 1": rate,
-                "Skill 2": rate
-            }
-            }
-
-            **Rules:**
-            - If the candidate has **no mention** of experience for a skill, rate it **1**.
-            - If the skill is mentioned **briefly** or in a general context, rate it **2-3**.
-            - If the candidate has **mid experience, projects**, rate it **4**.
-            - If the candidate has **strong experience, projects, or certifications**, rate it **5**.
-            - Write the JSON format without 'JSON' in the beginning.
-
-            **Example Input:**
-            ---
-            CV:
-            "I have been working as a Data Scientist for 5 years, primarily using Python and TensorFlow for Machine Learning. I also have experience with SQL databases and AWS cloud services. Recently, I completed a certification in NLP."
-
-            Extracted Skills:
-            ["Python", "Machine Learning", "SQL", "AWS", "NLP", "Deep Learning"]
-
-            **Expected Output:**
-            ---
-            {
-            "skills": {
-                "Python": 5,
-                "Machine Learning": 5,
-                "SQL": 4,
-                "AWS": 4,
-                "NLP": 5,
-                "Deep Learning": 2
-            }
-            }
-
-            Now, analyze the following CV and extracted skills and return the JSON response.
-
-            CV: \n''' + text + '''\n \n Extracted Skills: \n''' + f'''{skills}'''
+            weight_cv = constants.CV_EMBEDDING_PROMPT + text + '''\n \n Extracted Skills: \n''' + f'''{skills}'''
 
             CV_weight_query = await client.chat.completions.create(
 
@@ -133,7 +92,7 @@ async def main_function(id,user_id,type):
 
             await conn.fetch("insert into cv_embedding(cv_id,vector) values ($1,$2) on conflict (cv_id) do nothing;",id,f'{weighted_cv_embedding.tolist()}')
 
-        elif type == 'job':
+        elif type == constants.JOB_TYPE:
             rows = await conn.fetch('''select json_object_agg(skills.name,job_skill.importance) 
                         from job_skill 
                         join skills on job_skill.skill_id = skills.id
@@ -143,7 +102,7 @@ async def main_function(id,user_id,type):
             await recommend_users(id, weighted_job_embedding.tolist(), conn)
             await conn.fetch("insert into job_embedding(job_id,embedding) values ($1,$2) on conflict (job_id) do nothing;",id,f'{weighted_job_embedding.tolist()}')
 
-        if type == 'profile' or type == 'cv':
+        if type == constants.PROFILE_TYPE or type == constants.CV_TYPE:
             cv_id = None
 
             
@@ -186,7 +145,7 @@ async def main_function(id,user_id,type):
                             ''',user_id)
                 cv_id = rows[0][0]
 
-            cv = client_minio.get_object("cvs-bucket", f"{cv_id}.pdf")
+            cv = client_minio.get_object(config("MINIO_CV_BUCKET"), f"{cv_id}.pdf")
 
             pdf_bytes = io.BytesIO(cv.read())
 
@@ -195,71 +154,7 @@ async def main_function(id,user_id,type):
                     cv_text = page.extract_text()
             
 
-            weight_profile = '''You are an expert in analyzing candidate CVs to assess skill proficiency. Given a CV, a list of extracted skills, Education as an array of dictionaries, and
-            Experiences as an array of dictionaries, evaluate the candidate’s experience in each skill and assign a rating from 1 (poor) to 5 (excellent) based on:
-            - Years of experience
-            - Projects or work history related to the skill
-            - Certifications, courses, or achievements
-
-            Return the result in the following **JSON format**:
-
-            {
-            "skills": {
-                "Skill 1": rate,
-                "Skill 2": rate
-            }
-            }
-
-            **Rules:**
-            - If the candidate has **no mention** of experience for a skill, rate it **1**.
-            - If the skill is mentioned **briefly** or in a general context, rate it **2-3**.
-            - If the candidate has **mid experience, projects**, rate it **4**.
-            - If the candidate has **strong experience, projects, and certifications**, rate it **5**.
-            - Write the JSON format without 'JSON' in the beginning.
-            - Look up the candidate's projects from the CV.
-            - Look up the experience and education from both CV and the given list.
-            - If the same experience/education is present in the CV and the list, consider only the one in the CV.
-            - The output should be the JSON format only.
-
-            **Example Input:**
-            ---
-            CV:
-            "Assiut University, Faculty of Computers and Information, Egypt Aug 18 – Aug 22
-            Bachelor's degree in bioinformatics.Overall Grade: 3.48 out of 4.0.
-            I have worked as a Data Scientist at Microsoft for 5 years, primarily using Python and TensorFlow for Machine Learning. I also have experience with SQL databases and AWS cloud services. Recently, I completed a certification in NLP."
-
-            Extracted Skills:
-            ["Python", "Machine Learning", "SQL", "AWS", "NLP", "Deep Learning"]
-
-            Extracted Experience:
-            [{"company_name": "Microsoft",
-            "start_date": "2020",
-            "end_date": "2025",
-            "description": "I have been working as a Data Scientist in Microsoft for 5 years, primarily using Python and TensorFlow for Machine Learning.",
-            "job_title": "Data Scientist"}]
-
-            Extracted Education:
-            [{"school_name": "Assiut University",
-            "field": "Faculty of Computers and Information",
-            "degree": "Bachelor's degree in bioinformatics",
-            "grade": "3.48"}]
-
-            **Expected Output:**
-            ---
-            {
-            "skills": {
-                "Python": 5,
-                "Machine Learning": 5,
-                "SQL": 4,
-                "AWS": 4,
-                "NLP": 5,
-                "Deep Learning": 2
-            }
-            }
-
-            Now, analyze the following CV and extracted skills and return the JSON response.
-
-            CV: \n''' + cv_text + '''\n \n Extracted Skills: \n''' + f'''{skills}''' + '''\n \n Extracted Experience: \n''' + f'''{experience}''' + '''\n \n Extracted Education: \n''' + f'''{education}'''
+            weight_profile = constants.PROFILE_WEIGHING_PROMPT + cv_text + '''\n \n Extracted Skills: \n''' + f'''{skills}''' + '''\n \n Extracted Experience: \n''' + f'''{experience}''' + '''\n \n Extracted Education: \n''' + f'''{education}'''
 
             profile_weight_query = await client.chat.completions.create(
 
@@ -317,10 +212,3 @@ async def recommend_users(job_id, embedding, conn):
                 where job_id = $1
                 and not(seeker_id = any (select seeker_id from upsert));''', job_id, f'{embedding}')
     
-
-asyncio.run(main_function(1,3,'job'))
-
-
-
-
-
