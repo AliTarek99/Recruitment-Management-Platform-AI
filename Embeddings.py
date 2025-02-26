@@ -7,6 +7,7 @@ import asyncpg
 from sentence_transformers import SentenceTransformer
 from decouple import config
 import constants
+import re
 
 pool = None 
 client_minio = Minio(
@@ -51,7 +52,9 @@ async def main_function(id,user_id,type):
     global pool
     if pool == None:
         await run()
+        print(6)
     async with pool.acquire() as conn:
+        print(7)
         if type == constants.CV_TYPE:
 
             rows = await conn.fetch("SELECT skills FROM CV_Keywords WHERE cv_id = $1", id)
@@ -65,27 +68,29 @@ async def main_function(id,user_id,type):
                     print(text)
             
             weight_cv = constants.CV_EMBEDDING_PROMPT + text + '''\n \n Extracted Skills: \n''' + f'''{skills}'''
-
+            print(8)
+            cv_weighting_conversation = [
+                {
+                    "role": "system",
+                    "content": weight_cv
+                },
+                {
+                    "role": "user",
+                    "content": f"Analyze the following CV and extracted skills and return the JSON response.\n\nCV:\n{text}\n\nExtracted Skills:\n{skills}"
+                }
+            ]
             CV_weight_query = await client.chat.completions.create(
 
-                messages=[
-
-                    {
-
-                        "role": "user",
-
-                        "content": weight_cv,
-
-                    }
-
-                ],
+                messages=cv_weighting_conversation,
 
                 model="llama-3.3-70b-versatile",
 
             )
-
+            print(9)
             CV_weight = CV_weight_query.choices[0].message.content
-
+            match = re.search(r'```\s*(?:json)?\s*(.*?)```', CV_weight, re.DOTALL)
+            #If a match is found, apply the regular expression, else, return the original response.
+            CV_weight = match.group(1).strip() if match else CV_weight #Failsafe for inconsistent LLM output
             skills_dict_cv = json.loads(CV_weight)
 
             weighted_cv_embedding = get_embeddings(skills_dict_cv['skills'])
@@ -154,27 +159,28 @@ async def main_function(id,user_id,type):
                     cv_text = page.extract_text()
             
 
-            weight_profile = constants.PROFILE_WEIGHING_PROMPT + cv_text + '''\n \n Extracted Skills: \n''' + f'''{skills}''' + '''\n \n Extracted Experience: \n''' + f'''{experience}''' + '''\n \n Extracted Education: \n''' + f'''{education}'''
-
+            weight_profile = constants.PROFILE_WEIGHING_PROMPT
+            profile_conversation = [
+                {
+                    "role":"system",
+                    "content": weight_profile
+                },
+                {
+                    "role":"user",
+                    "content":f"Now, analyze the following CV and extracted skills, experience, and education then return the JSON response.\nCV:\n{cv_text}\n\nExtracted Skills:\n{skills}\n\nExtracted Experience:\n{experience}\n\nExtracted Education:\n{education}"
+                }
+            ]
             profile_weight_query = await client.chat.completions.create(
 
-                messages=[
-
-                    {
-
-                        "role": "user",
-
-                        "content": weight_profile,
-
-                    }
-
-                ],
+                messages=profile_conversation,
 
                 model="llama-3.3-70b-versatile",
 
             )
             profile_weight = profile_weight_query.choices[0].message.content
-
+            match = re.search(r'```\s*(?:json)?\s*(.*?)```', profile_weight, re.DOTALL)
+            #If a match is found, apply the regular expression, else, return the original response.
+            profile_weight = match.group(1).strip() if match else profile_weight #Failsafe for inconsistent LLM output
             skills_dict_profile = json.loads(profile_weight)
 
             weighted_profile_embedding = get_embeddings(skills_dict_profile['skills'])
