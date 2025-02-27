@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+service CVService {
+    rpc UploadCV (stream CVRequest) returns (CVResponse);
+}
+
+message CVRequest {
+    bytes cv = 1;
+}
+
+message CVResponse {
+    string response = 1;
+}
