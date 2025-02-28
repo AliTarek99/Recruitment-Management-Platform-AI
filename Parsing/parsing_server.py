@@ -8,11 +8,15 @@ from cv_pb2_grpc import CVServiceServicer, add_CVServiceServicer_to_server
 from cv_pb2 import CVResponse
 
 class ParserService(CVServiceServicer):
-    async def ParsePDF(self, request, context):
+    async def ParsePDF(self, request_iterator, context):
+        # Accumulate the incoming bytes from the stream.
+        pdf_bytes = b""
         try:
-            pdf_bytes = request.cv
-            # Call the parser with the PDF bytes
-            res = json.dumps(parse(pdf_bytes))
+            # Asynchronously iterate over each incoming CVRequest message.
+            async for request in request_iterator:
+                pdf_bytes += request.cv
+            res = parse(pdf_bytes)
+
             return CVResponse(res)
         except Exception as e:
             return CVResponse(status=f"Error: {e}")

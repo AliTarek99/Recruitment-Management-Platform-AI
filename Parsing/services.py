@@ -142,12 +142,13 @@ async def parse(id, cv=None):
 
     CV = re.search(r'```\s*(?:json)?\s*(.*?)```', CV_response, re.DOTALL)
 
-    if CV:
+	# handle grpc call
+    if cv:
         extracted_CV = CV.group(1).strip()
-		
-    CV_dict = json.loads(extracted_CV)
-    if not cv:
+        return extracted_CV
+    # handle consuming from kafka
+    else:
+        CV_dict = json.loads(extracted_CV)
         async with pool.acquire() as conn:
             await conn.fetch("INSERT INTO cv_keywords (cv_id, skills) VALUES($1, $2) ON CONFLICT (cv_id) DO NOTHING", id, CV_dict.get("skills"))
     
-    return CV_dict
