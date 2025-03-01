@@ -8,23 +8,25 @@ from cv_pb2_grpc import CVServiceServicer, add_CVServiceServicer_to_server
 from cv_pb2 import CVResponse
 
 class ParserService(CVServiceServicer):
-    async def ParsePDF(self, request_iterator, context):
+    async def UploadCV(self, request_iterator, context):
         # Accumulate the incoming bytes from the stream.
         pdf_bytes = b""
         try:
             # Asynchronously iterate over each incoming CVRequest message.
             async for request in request_iterator:
+                if context.cancelled():
+                    await context.abort(grpc.StatusCode.CANCELLED, "Client cancelled the call")
                 pdf_bytes += request.cv
-            res = parse(pdf_bytes)
 
-            return CVResponse(res)
+            res = await parse(None, pdf_bytes)
+            return CVResponse(response=res)
         except Exception as e:
-            return CVResponse(status=f"Error: {e}")
-        
+            await context.abort(grpc.StatusCode.INTERNAL, f"Error processing CV: {e}")
+
     async def serve(self):
         server = grpc.aio.server(futures.ThreadPoolExecutor(max_workers=10))
         add_CVServiceServicer_to_server(ParserService(), server)
-        server.add_insecure_port('[::]:50051')
+        server.add_insecure_port('0.0.0.0:50051')
         await server.start()
         await server.wait_for_termination()
         
@@ -36,8 +38,9 @@ async def consume():
         enable_auto_commit=False,
         value_deserializer=lambda v: json.loads(v.decode('utf-8'))
     )
-    print("Starting consumer", flush=True)
     await consumer.start()
+    print("Consumer Started", flush=True)
+    
     try:
         async for msg in consumer:
             try:
