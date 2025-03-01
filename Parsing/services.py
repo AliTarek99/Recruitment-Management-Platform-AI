@@ -53,7 +53,7 @@ async def parse(id, cv=None):
             response = await minio_client.get_object(Bucket=config("MINIO_CV_BUCKET"), Key=f"{id}.pdf")
             pdf_bytes = io.BytesIO((await response.get("Body").read()))
     else:
-        pdf_bytes = cv
+        pdf_bytes = io.BytesIO(cv)
     pdf_text = extract_text_from_pdf(pdf_bytes)
 	
     prompt = '''You are an AI assistant specialized in extracting structured information from resumes. Given the following resume text, extract key details in exactly this JSON format. Here's an example:
@@ -140,11 +140,17 @@ async def parse(id, cv=None):
 
     CV_response = CV_query.choices[0].message.content
 
-    CV = re.search(r'```\s*(?:json)?\s*(.*?)```', CV_response, re.DOTALL)
+    parsed_CV = re.search(r'```\s*(?:json)?\s*(.*?)```', CV_response, re.DOTALL)
+    
+    extracted_CV = None
+    
+    if parsed_CV:
+        extracted_CV = parsed_CV.group(1).strip()
+    else:
+        extracted_CV = CV_response
 
 	# handle grpc call
     if cv:
-        extracted_CV = CV.group(1).strip()
         return extracted_CV
     # handle consuming from kafka
     else:
