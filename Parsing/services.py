@@ -63,7 +63,8 @@ async def parse(id, cv=None):
 		"name": "Full Name",
 		"phone": "Phone Number",
 		"email": "Email Address",
-		"location": "City, Country"
+		"city": "City",
+		"country": "Country"
 	},
 	"education": [
 		{
@@ -97,26 +98,27 @@ async def parse(id, cv=None):
 	### **Instructions (Follow Strictly):**
 	1. **Maintain the exact JSON structure with correct nesting**. This is a **top priority**.  
 	2. **Extract all available information while ensuring accuracy**.  
-	3. **Format Dates**: Use `Month Year` format for both start and end dates (e.g., `"January 2022 - December 2023"`).  
-	4. **Format Locations**: Use `City, Country` format (e.g., `"San Francisco, USA"`).  
-	5. **Spoken Languages**: Include **only** the language names (e.g., `"English"`, `"Spanish"`).  
-	6. **Skills**: 
+	3. **Format Dates**: Use `Month Year` format for both start and end dates (e.g., `"January 2022 - December 2023"`).
+	4. **Format City**: Use the city name in the "city" field. Write the city name only (e.g., "San Francisco").
+	5. **Format Country**: Use the country name in the "country" field. Write the country name only (e.g., "USA").
+	6. **Spoken Languages**: Include **only** the language names (e.g., `"English"`, `"Spanish"`).  
+	7. **Skills**: 
 		- Extract and list **all relevant skills**. Check for skills **in any section of the CV**, not just in a dedicated "Skills" section.
 		-Ensure each individual skill is added as a separate element in the "skills" list.
-	7. **Grade (GPA Handling)**:
+	8. **Grade (GPA Handling)**:
 	- If a GPA is provided, extract **only the numeric GPA** (e.g., `"3.48"` from `"GPA: 3.48 of 4.00"`).  
 	- Do **not** include text like `"of 4.00"` or `"%"`.  
 	- If the GPA is not explicitly available, check for a percentage (e.g., `"85%" → `"85"`).  
 	- If no grade is found, leave it **blank**.  
-	8. **Abbreviations**: Expand common abbreviations into their full form. Example:
+	9. **Abbreviations**: Expand common abbreviations into their full form. Example:
 	- `"ML"` → `"Machine Learning"`
 	- `"NLP"` → `"Natural Language Processing"`
 	- `"AI"` → `"Artificial Intelligence"`
-	9. **If a field is missing, leave it blank** instead of guessing.  
-	10. **Output only valid JSON**:  
+	10. **If a field is missing, leave it blank** instead of guessing.  
+	11. **Output only valid JSON**:  
 	- **Do not include any introductory/explanatory text.**  
 	- **Do not print `json` or any formatting hints before the JSON output.**
-	11. **Phone Numbers**: If multiple phone numbers are found, include only the most relevant one (e.g., the primary number mentioned under contact details or the first valid number found). Ignore duplicates or secondary numbers.
+	12. **Phone Numbers**: If multiple phone numbers are found, include only the most relevant one (e.g., the primary number mentioned under contact details or the first valid number found). Ignore duplicates or secondary numbers.
 	'''
 
     conversation =[
