@@ -80,8 +80,8 @@ async def parse(id, cv=None):
 		{
 		"title": "Job Title",
 		"company": "Company Name",
-		"start date": "Month Year",
-		"end date": "Month Year"
+		"start date": "YYYY-MM-DD",
+		"end date": "YYYY-MM-DD"
 		}
 	],
 	"skills": [
@@ -98,7 +98,12 @@ async def parse(id, cv=None):
 	### **Instructions (Follow Strictly):**
 	1. **Maintain the exact JSON structure with correct nesting**. This is a **top priority**.  
 	2. **Extract all available information while ensuring accuracy**.  
-	3. **Format Dates**: Use `Month Year` format for both start and end dates (e.g., `"January 2022 - December 2023"`).
+	3. **Format Dates**: 
+		-Use `YYYY-MM-DD` format for both start and end dates in `workExperience` (e.g., `"2022-01-01"`).
+		-If no day is found, extract the date in the format `YYYY-MM` in `workExperince` (e.g., `"2022-01"`).
+		-If no month is found, extract the date in the format `YYYY` in `workExperince` (e.g., `"2022"`).
+		-If the word `present` is written in the date return a string of the word "present".
+		-If no date is found return an empty string.
 	4. **Format City**: Use the city name in the "city" field. Write the city name only (e.g., "San Francisco").
 	5. **Format Country**: Use the country name in the "country" field. Write the country name only (e.g., "USA").
 	6. **Spoken Languages**: Include **only** the language names (e.g., `"English"`, `"Spanish"`).  
