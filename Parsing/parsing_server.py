@@ -1,6 +1,6 @@
 import asyncio
 from aiokafka import AIOKafkaConsumer
-from services import parse
+from services import parse, shutdown
 import json
 import grpc
 from concurrent import futures
@@ -36,7 +36,7 @@ async def consume():
         bootstrap_servers='kafka1:9092,kafka2:9092',
         group_id="parsing_group",
         enable_auto_commit=False,
-        value_deserializer=lambda v: json.loads(v.decode('utf-8'))
+        value_deserializer=lambda v: json.loads(v.decode('utf-8')) if v else None
     )
     await consumer.start()
     print("Consumer Started", flush=True)
@@ -44,6 +44,9 @@ async def consume():
     try:
         async for msg in consumer:
             try:
+                if not msg.value:
+                    print("Received empty message, skipping...", flush=True)
+                    continue
                 print(f"Consumed message: {msg.value}", flush=True)
                 await parse(msg.value.get("id"))
                 await consumer.commit()
@@ -51,6 +54,7 @@ async def consume():
                 print(f"Error processing message: {e}", flush=True)
     finally:
         await consumer.stop()
+        await shutdown()
 
 async def main():
     server_task = asyncio.create_task(ParserService().serve())

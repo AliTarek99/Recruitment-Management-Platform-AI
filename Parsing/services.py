@@ -8,7 +8,10 @@ from minio import Minio
 import asyncpg
 from groq import AsyncGroq
 from aiobotocore.session import get_session
+from aiokafka import AIOKafkaProducer
+
 pool = None
+producer = None
 
 client = AsyncGroq(
 
@@ -30,6 +33,14 @@ async def run():
         max_size=int(config("DB_POOL_MAX_SIZE"))
     )
 
+    global producer
+    producer = AIOKafkaProducer(
+        bootstrap_servers='kafka1:9092,kafka2:9092',
+        value_serializer=lambda v: json.dumps(v).encode('utf-8')
+    )
+    await producer.start()
+    
+
 def extract_text_from_pdf(pdf_bytes):
     text = ""
     with pdfplumber.open(pdf_bytes) as pdf:
@@ -38,8 +49,8 @@ def extract_text_from_pdf(pdf_bytes):
     return text
 
 async def parse(id, cv=None):
-    global pool
-    if pool == None:
+    global pool, producer
+    if pool is None or producer is None:
         await run()
     session = get_session()
     pdf_text = ""
@@ -164,4 +175,17 @@ async def parse(id, cv=None):
         CV_dict = json.loads(extracted_CV)
         async with pool.acquire() as conn:
             await conn.fetch("INSERT INTO cv_keywords (cv_id, skills) VALUES($1, $2) ON CONFLICT (cv_id) DO NOTHING", id, CV_dict.get("skills"))
-    
+        print("Parsed CV", flush=True)
+        
+        try:
+            await producer.send_and_wait('cv_embedding_generation', value={"id": id})
+            print(f"Message successfully published to topic 'cv_embedding_generation' for id: {id}", flush=True)
+        except Exception as e:
+            print(f"Failed to publish message to Kafka: {e}", flush=True)
+
+
+async def shutdown():
+    global producer
+    if producer is not None:
+        await producer.stop()
+
