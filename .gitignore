@@ -4,4 +4,5 @@
 __pycache__
 Parsing/.env
 Embedding/.env
-fine_tuned_mpnet/
+Embedding/fine_tuned_mpnet/
+Embedding/temp/

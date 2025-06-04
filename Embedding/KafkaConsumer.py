@@ -13,22 +13,25 @@ async def consume():
         bootstrap_servers='kafka1:9092,kafka2:9092',
         group_id="embedding_group",
         enable_auto_commit=False,
-        value_deserializer=lambda v: json.loads(v.decode('utf-8'))
+        value_deserializer=lambda v: json.loads(v.decode('utf-8')),
+        request_timeout_ms=60000,
+        session_timeout_ms=60000,
     )
     
     await consumer.start()
     try:
         async for msg in consumer:
+            print("1" * 100, flush=True)
             try:
                 if msg.topic == 'cv_embedding_generation':
                     await main_function(msg.value.get("id"), msg.value.get("userId"), constants.CV_TYPE)
                 elif msg.topic == 'job_embedding_generation':
-                    await main_function(msg.value.id, None, constants.JOB_TYPE)
+                    await main_function(msg.value.get("jobId"), None, constants.JOB_TYPE)
                 elif msg.topic == 'profile_embedding_generation':
-                    await main_function(None, msg.value.userId, constants.PROFILE_TYPE)
+                    await main_function(None, msg.value.get("userId"), constants.PROFILE_TYPE)
                 await consumer.commit()
             except Exception as e:
-                print(f"Error processing message: {e}")
+                print(f"Error processing message: {e}", flush=True)
     finally:
         await consumer.stop()
 

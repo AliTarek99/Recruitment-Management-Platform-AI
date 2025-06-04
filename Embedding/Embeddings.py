@@ -34,8 +34,8 @@ async def run():
         user=config("DB_USER"), 
         password=config("DB_PASSWORD"),
         port=config("DB_PORT"),
-        min_size=config("DB_POOL_MIN_SIZE"),
-        max_size=config("DB_POOL_MAX_SIZE")
+        min_size=int(config("DB_POOL_MIN_SIZE")),
+        max_size=int(config("DB_POOL_MAX_SIZE"))
     )
 
 def weighted_embed_vec(skill_dict, embedding):
@@ -50,9 +50,11 @@ def get_embeddings(skills_dict):
 
 async def main_function(id,user_id,type):
     global pool
+    print("###########################################################################################", flush=True)
     if pool == None:
+        print("Creating database connection pool", flush=True)
         await run()
-        print(6)
+        print("Database connection pool created", flush=True)
     async with pool.acquire() as conn:
         print(7)
         if type == constants.CV_TYPE:
@@ -108,6 +110,7 @@ async def main_function(id,user_id,type):
             await conn.fetch("insert into job_embedding(job_id,embedding) values ($1,$2) on conflict (job_id) do nothing;",id,f'{weighted_job_embedding.tolist()}')
 
         if type == constants.PROFILE_TYPE or type == constants.CV_TYPE:
+            print("Processing profile or CV type", flush=True)
             cv_id = None
 
             
@@ -119,8 +122,8 @@ async def main_function(id,user_id,type):
                         from education
                         where education.user_id =$1''',user_id)
             education = rows[0][0]
-
-            
+    
+            print("Education fetched", flush=True)
             
             rows = await conn.fetch('''select array_agg(json_build_object(
                         "company_name",user_experience.company_name,
@@ -132,7 +135,7 @@ async def main_function(id,user_id,type):
                         where user_experience.user_id = $1''',user_id)
             experience = rows[0][0]
 
-            
+            print("Experience fetched", flush=True)
 
             rows = await conn.fetch('''select array_agg(skills.name)
                         from user_skills
@@ -140,17 +143,21 @@ async def main_function(id,user_id,type):
                         where user_skills.user_id = $1''',user_id)
             skills = rows[0][0]
 
+            print("Skills fetched", flush=True)
+
             if type == 'cv':
                 cv_id = id
             else:
-                
+                print("Fetching CV ID for user", user_id, flush=True)
                 rows = await conn.fetch('''select id
                             from CV
                             where user_id = $1 and deleted = false and created_at = (select max(created_at) from (select created_at from cv where user_id= $1))
                             ''',user_id)
                 cv_id = rows[0][0]
 
-            cv = client_minio.get_object(config("MINIO_CV_BUCKET"), f"{cv_id}.pdf")
+            cv = client_minio.get_object(config("MINIO_CV_BUCKET"), f"{cv_id}")
+
+            print("CV fetched from MinIO", flush=True)
 
             pdf_bytes = io.BytesIO(cv.read())
 
@@ -158,6 +165,7 @@ async def main_function(id,user_id,type):
                 for page in pdf.pages:
                     cv_text = page.extract_text()
             
+            print("CV text extracted", flush=True)
 
             weight_profile = constants.PROFILE_WEIGHING_PROMPT
             profile_conversation = [
@@ -177,25 +185,32 @@ async def main_function(id,user_id,type):
                 model="llama-3.3-70b-versatile",
 
             )
+
             profile_weight = profile_weight_query.choices[0].message.content
             match = re.search(r'```\s*(?:json)?\s*(.*?)```', profile_weight, re.DOTALL)
             #If a match is found, apply the regular expression, else, return the original response.
             profile_weight = match.group(1).strip() if match else profile_weight #Failsafe for inconsistent LLM output
             skills_dict_profile = json.loads(profile_weight)
 
+            print("Profile weighting completed", flush=True)
+
             weighted_profile_embedding = get_embeddings(skills_dict_profile['skills'])
+
+            print("Weighted profile embedding calculated", flush=True)
 
             await recommend_jobs(user_id, weighted_profile_embedding.tolist(),conn)
             await conn.fetch('''insert into job_seeker_embeddings(seeker_id,embedding) values ($1,$2) 
                             on conflict (seeker_id) do update set embedding = excluded.embedding;''',user_id,f'{weighted_profile_embedding.tolist()}')
+            print("Profile embedding inserted into database", flush=True)
 
 
 async def recommend_jobs(user_id, embedding, conn):
+    print("Recommending jobs for user:", user_id, flush=True)
     await conn.fetch('''WITH upsert AS materialized (
                             INSERT INTO recommendations (job_id, seeker_id, similarity_score)
                             SELECT job_id, $1 AS seeker_id, 1 - (embedding <=> $2::vector) AS similarity_score
                             FROM job_embedding
-                            WHERE 1 - (embedding <=> $2::vector) > 0.1
+                            WHERE 1 - (embedding <=> $2::vector) > 0.65
                             ON CONFLICT (job_id, seeker_id) 
                             DO UPDATE SET similarity_score = EXCLUDED.similarity_score
                             RETURNING job_id
@@ -204,6 +219,7 @@ async def recommend_jobs(user_id, embedding, conn):
                         WHERE seeker_id = $1
                         AND not (job_id = any(SELECT job_id FROM upsert));
                     ''', user_id, f'{embedding}')
+    print("Job recommendations updated for user:", user_id, flush=True)
 
 
 async def recommend_users(job_id, embedding, conn):
@@ -211,7 +227,7 @@ async def recommend_users(job_id, embedding, conn):
                 insert into recommendations (job_id, seeker_id, similarity_score)
                 select $1 AS job_id, seeker_id, 1 - (embedding <=> $2::vector) AS similarity_score
                 from job_seeker_embeddings
-                where 1 - (embedding <=> $2::vector) > 0.1
+                where 1 - (embedding <=> $2::vector) > 0.65
                 on conflict (job_id, seeker_id) do update set similarity_score = EXCLUDED.similarity_score
                 returning seeker_id)
                 delete from recommendations
