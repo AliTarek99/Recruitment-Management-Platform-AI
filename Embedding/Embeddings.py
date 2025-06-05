@@ -50,7 +50,6 @@ def get_embeddings(skills_dict):
 
 async def main_function(id,user_id,type):
     global pool
-    print("###########################################################################################", flush=True)
     if pool == None:
         print("Creating database connection pool", flush=True)
         await run()
@@ -63,10 +62,10 @@ async def main_function(id,user_id,type):
             skills = rows[0][0]
             response = client_minio.get_object(config("MINIO_CV_BUCKET"), f"{id}.pdf")
             pdf_bytes = io.BytesIO(response.read())
-
+            text = ""
             with pdfplumber.open(pdf_bytes) as pdf:
                 for page in pdf.pages:
-                    text = page.extract_text()
+                    text += page.extract_text()
                     print(text)
             
             weight_cv = constants.CV_EMBEDDING_PROMPT + text + '''\n \n Extracted Skills: \n''' + f'''{skills}'''
@@ -160,10 +159,10 @@ async def main_function(id,user_id,type):
             print("CV fetched from MinIO", flush=True)
 
             pdf_bytes = io.BytesIO(cv.read())
-
+            cv_text = ""
             with pdfplumber.open(pdf_bytes) as pdf:
                 for page in pdf.pages:
-                    cv_text = page.extract_text()
+                    cv_text += page.extract_text()
             
             print("CV text extracted", flush=True)
 
@@ -187,6 +186,7 @@ async def main_function(id,user_id,type):
             )
 
             profile_weight = profile_weight_query.choices[0].message.content
+            print(profile_weight, flush=True)
             match = re.search(r'```\s*(?:json)?\s*(.*?)```', profile_weight, re.DOTALL)
             #If a match is found, apply the regular expression, else, return the original response.
             profile_weight = match.group(1).strip() if match else profile_weight #Failsafe for inconsistent LLM output
@@ -195,7 +195,6 @@ async def main_function(id,user_id,type):
             print("Profile weighting completed", flush=True)
 
             weighted_profile_embedding = get_embeddings(skills_dict_profile['skills'])
-
             print("Weighted profile embedding calculated", flush=True)
 
             await recommend_jobs(user_id, weighted_profile_embedding.tolist(),conn)
@@ -210,7 +209,7 @@ async def recommend_jobs(user_id, embedding, conn):
                             INSERT INTO recommendations (job_id, seeker_id, similarity_score)
                             SELECT job_id, $1 AS seeker_id, 1 - (embedding <=> $2::vector) AS similarity_score
                             FROM job_embedding
-                            WHERE 1 - (embedding <=> $2::vector) > 0.65
+                            WHERE 1 - (embedding <=> $2::vector) > 0.55
                             ON CONFLICT (job_id, seeker_id) 
                             DO UPDATE SET similarity_score = EXCLUDED.similarity_score
                             RETURNING job_id
@@ -227,7 +226,7 @@ async def recommend_users(job_id, embedding, conn):
                 insert into recommendations (job_id, seeker_id, similarity_score)
                 select $1 AS job_id, seeker_id, 1 - (embedding <=> $2::vector) AS similarity_score
                 from job_seeker_embeddings
-                where 1 - (embedding <=> $2::vector) > 0.65
+                where 1 - (embedding <=> $2::vector) > 0.55
                 on conflict (job_id, seeker_id) do update set similarity_score = EXCLUDED.similarity_score
                 returning seeker_id)
                 delete from recommendations

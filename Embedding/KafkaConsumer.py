@@ -21,7 +21,6 @@ async def consume():
     await consumer.start()
     try:
         async for msg in consumer:
-            print("1" * 100, flush=True)
             try:
                 if msg.topic == 'cv_embedding_generation':
                     await main_function(msg.value.get("id"), msg.value.get("userId"), constants.CV_TYPE)

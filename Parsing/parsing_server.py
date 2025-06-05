@@ -21,6 +21,7 @@ class ParserService(CVServiceServicer):
             res = await parse(None, pdf_bytes)
             return CVResponse(response=res)
         except Exception as e:
+            print(f"Error processing CV: {e}", flush=True)
             await context.abort(grpc.StatusCode.INTERNAL, f"Error processing CV: {e}")
 
     async def serve(self):
