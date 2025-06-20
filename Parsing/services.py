@@ -173,7 +173,7 @@ async def parse(id, cv=None):
     
     CV_dict = json.loads(extracted_CV)
     CV_dict["skills"] = [skill.lower() for skill in CV_dict.get("skills",[])]
-    
+    CV_dict["contactInformation"]["phone"] = CV_dict["contactInformation"]["phone"].replace(" ", "")
     print(CV_response, flush=True)
     async with pool.acquire() as conn:
         #insert new skills into the database
