@@ -90,6 +90,7 @@ async def parse(id, cv=None):
         "workExperience": [
             {
             "title": "Job Title",
+            "description": "Job Description",
             "company": "Company Name",
             "start date": "YYYY-MM-DD",
             "end date": "YYYY-MM-DD"
@@ -136,6 +137,7 @@ async def parse(id, cv=None):
         - **Do not include any introductory/explanatory text.**  
         - **Do not print `json` or any formatting hints before the JSON output.**
         12. **Phone Numbers**: If multiple phone numbers are found, include only the most relevant one (e.g., the primary number mentioned under contact details or the first valid number found). Ignore duplicates or secondary numbers.
+        13. **Work Experience Description**: Include the description of the job in the "description" field in work experience. Leave an empty string if no description is mentioned.
         '''
 
     conversation =[
