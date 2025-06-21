@@ -10,7 +10,7 @@ log() {
 log "🔍" "Starting Parsing service..."
 (
   cd "./Parsing" \
-    && docker compose up -d --build \
+    && docker compose up -d \
     && log "✅ Parsing service is up."
 ) || { log "❌ Parsing service failed."; exit 1; }
 
@@ -18,7 +18,7 @@ log "🔍" "Starting Parsing service..."
 log "🤖" "Starting Embedding service..."
 (
   cd "./Embedding" \
-    && docker compose up -d --build \
+    && docker compose up -d \
     && log "✅ Embedding service is up."
 ) || { log "❌ Embedding service failed."; exit 1; }
 
