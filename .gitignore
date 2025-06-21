@@ -1,8 +1,6 @@
-
 .venv
 .idea
 __pycache__
-Parsing/.env
-Embedding/.env
+.env
 Embedding/fine_tuned_mpnet/
 Embedding/temp/

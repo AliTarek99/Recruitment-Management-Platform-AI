@@ -1,21 +1,12 @@
-
 services:
   parser-server:
-    image: python:3.12-slim
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: parser-server
-    working_dir: /app
-    volumes:
-      - .:/app
-    env_file:
-      - .env
-    command: >
-      sh -c "pip install -r requirements.txt &&
-             python parsing_server.py"
     networks:
       - internal-net
-
 
 networks:
   internal-net:
     external: true
-    name: internal-net
