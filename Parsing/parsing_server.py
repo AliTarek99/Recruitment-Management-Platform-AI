@@ -37,7 +37,8 @@ async def consume():
         bootstrap_servers='kafka1:9092,kafka2:9092',
         group_id="parsing_group",
         enable_auto_commit=False,
-        value_deserializer=lambda v: json.loads(v.decode('utf-8')) if v else None
+        value_deserializer=lambda v: json.loads(v.decode('utf-8')) if v else None,
+        auto_offset_reset='earliest',
     )
     await consumer.start()
     print("Consumer Started", flush=True)

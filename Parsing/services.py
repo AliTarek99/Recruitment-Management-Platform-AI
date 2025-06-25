@@ -61,7 +61,7 @@ async def parse(id, cv=None):
             aws_access_key_id=config("MINIO_ACCESS_KEY"),
             aws_secret_access_key=config("MINIO_SECRET_KEY"),
         ) as minio_client:
-            response = await minio_client.get_object(Bucket=config("MINIO_CV_BUCKET"), Key=f"{id}.pdf")
+            response = await minio_client.get_object(Bucket=config("MINIO_CV_BUCKET"), Key=f"{id}")
             pdf_bytes = io.BytesIO((await response.get("Body").read()))
     else:
         pdf_bytes = io.BytesIO(cv)
@@ -187,7 +187,8 @@ async def parse(id, cv=None):
     # handle consuming from kafka
     else:
         async with pool.acquire() as conn:
-            await conn.fetch("INSERT INTO cv_keywords (cv_id, skills) VALUES($1, $2) ON CONFLICT (cv_id) DO NOTHING", id, CV_dict.get("skills"))
+            CV_Dict_json = json.dumps(CV_dict.get("skills"))
+            await conn.fetch("INSERT INTO cv_keywords (cv_id, skills) VALUES($1, $2) ON CONFLICT (cv_id) DO NOTHING", int(id), CV_Dict_json)
         print("Parsed CV", flush=True)
         
         try:
