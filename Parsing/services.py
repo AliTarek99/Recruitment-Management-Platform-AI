@@ -174,21 +174,20 @@ async def parse(id, cv=None):
     CV_dict = json.loads(extracted_CV)
     CV_dict["skills"] = [skill.lower() for skill in CV_dict.get("skills",[])]
     CV_dict["contactInformation"]["phone"] = CV_dict["contactInformation"]["phone"].replace(" ", "")
-    print(CV_response, flush=True)
+    
     async with pool.acquire() as conn:
         #insert new skills into the database
         await conn.execute("INSERT INTO Skills (name) SELECT unnest($1::text[]) ON CONFLICT (name) DO NOTHING;", CV_dict.get("skills", []))
         skills = await conn.fetch("SELECT id, name FROM Skills WHERE name = ANY($1);", CV_dict.get("skills", []))
         CV_dict["skills"] = [{"id":row["id"], "name": row["name"]} for row in skills]
-        print(skills, flush=True)
+        
 	# handle grpc call
     if cv:
         return json.dumps(CV_dict)
     # handle consuming from kafka
     else:
         async with pool.acquire() as conn:
-            CV_Dict_json = json.dumps(CV_dict.get("skills"))
-            await conn.fetch("INSERT INTO cv_keywords (cv_id, skills) VALUES($1, $2) ON CONFLICT (cv_id) DO NOTHING", int(id), CV_Dict_json)
+            await conn.fetch("INSERT INTO cv_keywords (cv_id, skills) VALUES($1, $2) ON CONFLICT (cv_id) DO NOTHING", int(id), [skill["name"] for skill in CV_dict.get("skills", [])])
         print("Parsed CV", flush=True)
         
         try:
