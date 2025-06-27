@@ -8,6 +8,7 @@ from sentence_transformers import SentenceTransformer
 from decouple import config
 import constants
 import re
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 pool = None 
 client_minio = Minio(
@@ -18,7 +19,7 @@ client_minio = Minio(
 )
 
 client = AsyncGroq(
-
+    
     api_key= config("GROQ_API_KEY"),
 
 )
@@ -48,6 +49,7 @@ def get_embeddings(skills_dict):
     weighted_embed = weighted_embed_vec(skills_dict, skills_embed)
     return weighted_embed
 
+@retry(stop = stop_after_attempt(3), wait = wait_exponential(multiplier=2, min=1, max=5))
 async def main_function(id,user_id,type):
     global pool
     if pool == None:
@@ -68,7 +70,6 @@ async def main_function(id,user_id,type):
                     print(text)
             
             weight_cv = constants.CV_EMBEDDING_PROMPT + text + '''\n \n Extracted Skills: \n''' + f'''{skills}'''
-            print(8)
             cv_weighting_conversation = [
                 {
                     "role": "system",
@@ -86,7 +87,6 @@ async def main_function(id,user_id,type):
                 model="llama-3.3-70b-versatile",
 
             )
-            print(9)
             CV_weight = CV_weight_query.choices[0].message.content
             match = re.search(r'```\s*(?:json)?\s*(.*?)```', CV_weight, re.DOTALL)
             #If a match is found, apply the regular expression, else, return the original response.
@@ -98,14 +98,20 @@ async def main_function(id,user_id,type):
             await conn.fetch("insert into cv_embedding(cv_id,vector) values ($1,$2) on conflict (cv_id) do nothing;",id,f'{weighted_cv_embedding.tolist()}')
 
         elif type == constants.JOB_TYPE:
-            rows = await conn.fetch('''select json_object_agg(skills.name,job_skill.importance) 
-                        from job_skill 
-                        join skills on job_skill.skill_id = skills.id
-                        where job_skill.job_id = $1''',id)
-            skills = json.loads(rows[0][0])
-            weighted_job_embedding = get_embeddings(skills)
-            await recommend_users(id, weighted_job_embedding.tolist(), conn)
-            await conn.fetch("insert into job_embedding(job_id,embedding) values ($1,$2) on conflict (job_id) do nothing;",id,f'{weighted_job_embedding.tolist()}')
+            async with conn.transaction():
+                rows = await conn.fetch('''select json_object_agg(skills.name,job_skill.importance) 
+                            from job_skill 
+                            join skills on job_skill.skill_id = skills.id
+                            where job_skill.job_id = $1''',id)
+                print(rows[0][0], flush=True)
+                skills = json.loads(rows[0][0])
+                print(skills, flush=True)
+                weighted_job_embedding = get_embeddings(skills)
+                print("Weighted job embedding calculated", flush=True)
+                await recommend_users(id, weighted_job_embedding.tolist(), conn)
+                print("Users recommended for job", id, flush=True)
+                await conn.fetch("insert into job_embedding(job_id,embedding) values ($1,$2) on conflict (job_id) do nothing;",id,f'{weighted_job_embedding.tolist()}')
+                print("Job embedding inserted into database", flush=True)
 
         if type == constants.PROFILE_TYPE or type == constants.CV_TYPE:
             print("Processing profile or CV type", flush=True)
@@ -195,11 +201,12 @@ async def main_function(id,user_id,type):
 
             weighted_profile_embedding = get_embeddings(skills_dict_profile['skills'])
             print("Weighted profile embedding calculated", flush=True)
-
-            await recommend_jobs(user_id, weighted_profile_embedding.tolist(),conn)
-            await conn.fetch('''insert into job_seeker_embeddings(seeker_id,embedding) values ($1,$2) 
-                            on conflict (seeker_id) do update set embedding = excluded.embedding;''',user_id,f'{weighted_profile_embedding.tolist()}')
-            print("Profile embedding inserted into database", flush=True)
+            
+            async with conn.transaction():
+                await recommend_jobs(user_id, weighted_profile_embedding.tolist(),conn)
+                await conn.fetch('''insert into job_seeker_embeddings(seeker_id,embedding) values ($1,$2) 
+                                on conflict (seeker_id) do update set embedding = excluded.embedding;''',user_id,f'{weighted_profile_embedding.tolist()}')
+                print("Profile embedding inserted into database", flush=True)
 
 
 async def recommend_jobs(user_id, embedding, conn):
@@ -231,4 +238,5 @@ async def recommend_users(job_id, embedding, conn):
                 delete from recommendations
                 where job_id = $1
                 and not(seeker_id = any (select seeker_id from upsert));''', job_id, f'{embedding}')
+    print("User recommendations updated for job:", job_id, flush=True)
     
