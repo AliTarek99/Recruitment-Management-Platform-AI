@@ -16,6 +16,7 @@ async def consume():
         value_deserializer=lambda v: json.loads(v.decode('utf-8')),
         request_timeout_ms=60000,
         session_timeout_ms=60000,
+        auto_offset_reset='earliest',
     )
     
     await consumer.start()

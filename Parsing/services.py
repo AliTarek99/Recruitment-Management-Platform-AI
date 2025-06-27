@@ -191,7 +191,9 @@ async def parse(id, cv=None):
         print("Parsed CV", flush=True)
         
         try:
-            await producer.send_and_wait('cv_embedding_generation', value={"id": id})
+            async with pool.acquire() as conn:
+                res = await conn.fetch("SELECT user_id FROM cv WHERE id = $1", int(id))
+                await producer.send_and_wait('cv_embedding_generation', value={"id": int(id), "userId": res[0]["user_id"]})
             print(f"Message successfully published to topic 'cv_embedding_generation' for id: {id}", flush=True)
         except Exception as e:
             print(f"Failed to publish message to Kafka: {e}", flush=True)

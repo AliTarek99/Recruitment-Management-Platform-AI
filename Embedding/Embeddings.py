@@ -55,12 +55,11 @@ async def main_function(id,user_id,type):
         await run()
         print("Database connection pool created", flush=True)
     async with pool.acquire() as conn:
-        print(7)
         if type == constants.CV_TYPE:
-
+            print(f"Processing CV with ID: {id}", flush=True)
             rows = await conn.fetch("SELECT skills FROM CV_Keywords WHERE cv_id = $1", id)
             skills = rows[0][0]
-            response = client_minio.get_object(config("MINIO_CV_BUCKET"), f"{id}.pdf")
+            response = client_minio.get_object(config("MINIO_CV_BUCKET"), f"{id}")
             pdf_bytes = io.BytesIO(response.read())
             text = ""
             with pdfplumber.open(pdf_bytes) as pdf:
